@@ -68,39 +68,67 @@ def image_to_data_url(image):
 
 def improved_answer(image, question):
 
-    client = get_client()
+    import base64
+    from io import BytesIO
 
-    image = image.convert("RGB")
+    # Convert PIL image to base64
+    buffer = BytesIO()
+    image.convert("RGB").save(buffer, format="JPEG")
+    image_base64 = base64.b64encode(
+        buffer.getvalue()
+    ).decode("utf-8")
 
-    image_url = image_to_data_url(image)
+    # Strong instruction to force visual grounding
+    prompt = f"""
+You are a visual question-answering system.
 
-    messages = [
-        {
-            "role": "user",
-            "content": [
-                {
-                    "type": "text",
-                    "text": question
-                },
-                {
-                    "type": "image_url",
-                    "image_url": {
-                        "url": image_url
-                    }
-                }
-            ]
-        }
-    ]
+Answer the user's question ONLY from the uploaded figure.
+
+Carefully inspect:
+- labels
+- arrows
+- boxes
+- modules
+- connections
+- symbols
+- text inside the figure
+- the overall flow
+
+Do NOT assume information that is not visible in the figure.
+Do NOT give a generic cybersecurity explanation.
+If the requested information is not visible, say:
+"The figure does not provide enough information to answer this."
+
+User question:
+{question}
+
+Give a clear and concise answer based specifically on the figure.
+"""
 
     response = client.chat_completion(
         model=MODEL_NAME,
-        messages=messages,
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": prompt
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{image_base64}"
+                        }
+                    }
+                ]
+            }
+        ],
         max_tokens=512,
-        temperature=0.2
+        temperature=0.1
     )
 
-    return response.choices[0].message.content.strip()
-
+    return response.choices[0].message.content
 # ============================================================
 # USER INTERFACE
 # ============================================================
