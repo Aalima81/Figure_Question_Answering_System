@@ -1,17 +1,8 @@
 import streamlit as st
-import torch
 from PIL import Image
-from transformers import (
-    Qwen2_5_VLForConditionalGeneration,
-    AutoProcessor
-)
-
-
-# ============================================================
-# CONFIGURATION
-# ============================================================
-
-MODEL_NAME = "Qwen/Qwen2.5-VL-3B-Instruct"
+from huggingface_hub import InferenceClient
+import base64
+import io
 
 
 # ============================================================
@@ -26,47 +17,70 @@ st.set_page_config(
 
 
 # ============================================================
-# LOAD MODEL
+# CONFIGURATION
+# ============================================================
+
+MODEL_NAME = "Qwen/Qwen2.5-VL-3B-Instruct"
+
+
+# ============================================================
+# HUGGING FACE CLIENT
 # ============================================================
 
 @st.cache_resource
-def load_model():
+def get_client():
 
-    st.info("Loading Qwen2.5-VL-3B model...")
-
-    processor = AutoProcessor.from_pretrained(
-        MODEL_NAME
+    client = InferenceClient(
+        api_key=st.secrets["HF_TOKEN"]
     )
 
-    model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-        MODEL_NAME,
-        torch_dtype=torch.float16,
-        device_map="auto"
-    )
-
-    model.eval()
-
-    return processor, model
+    return client
 
 
-processor, model = load_model()
+client = get_client()
 
 
 # ============================================================
-# ANSWER FUNCTION
+# IMAGE TO DATA URL
+# ============================================================
+
+def image_to_data_url(image):
+
+    buffer = io.BytesIO()
+
+    image.save(
+        buffer,
+        format="PNG"
+    )
+
+    image_bytes = buffer.getvalue()
+
+    base64_image = base64.b64encode(
+        image_bytes
+    ).decode("utf-8")
+
+    return f"data:image/png;base64,{base64_image}"
+
+
+# ============================================================
+# QUESTION ANSWERING
 # ============================================================
 
 def improved_answer(image, question):
 
     image = image.convert("RGB")
 
+    image_url = image_to_data_url(image)
+
     messages = [
         {
             "role": "user",
             "content": [
                 {
-                    "type": "image",
-                    "image": image
+                    "type": "image_url",
+                    "image_url": {
+                        "url": image_url
+                    }
                 },
                 {
                     "type": "text",
@@ -76,40 +90,13 @@ def improved_answer(image, question):
         }
     ]
 
-    text = processor.apply_chat_template(
-        messages,
-        tokenize=False,
-        add_generation_prompt=True
+    response = client.chat.completions.create(
+        model=MODEL_NAME,
+        messages=messages,
+        max_tokens=512
     )
 
-    inputs = processor(
-        text=[text],
-        images=[image],
-        return_tensors="pt"
-    )
-
-    inputs = {
-        k: v.to(model.device)
-        for k, v in inputs.items()
-        if hasattr(v, "to")
-    }
-
-    with torch.no_grad():
-
-        output_ids = model.generate(
-            **inputs,
-            max_new_tokens=512
-        )
-
-    generated_ids = [
-        output_ids[i][len(inputs["input_ids"][i]):]
-        for i in range(len(output_ids))
-    ]
-
-    answer = processor.batch_decode(
-        generated_ids,
-        skip_special_tokens=True
-    )[0]
+    answer = response.choices[0].message.content
 
     return answer.strip()
 
@@ -125,19 +112,23 @@ st.write(
 )
 
 
-# ------------------------------------------------------------
-# Upload image
-# ------------------------------------------------------------
+# ============================================================
+# IMAGE UPLOAD
+# ============================================================
 
 uploaded_file = st.file_uploader(
     "Upload Figure",
-    type=["png", "jpg", "jpeg"]
+    type=[
+        "png",
+        "jpg",
+        "jpeg"
+    ]
 )
 
 
-# ------------------------------------------------------------
-# Question
-# ------------------------------------------------------------
+# ============================================================
+# QUESTION
+# ============================================================
 
 question = st.text_area(
     "Enter your question",
@@ -145,9 +136,9 @@ question = st.text_area(
 )
 
 
-# ------------------------------------------------------------
-# Display uploaded image
-# ------------------------------------------------------------
+# ============================================================
+# DISPLAY IMAGE
+# ============================================================
 
 image = None
 
@@ -165,9 +156,9 @@ if uploaded_file is not None:
     )
 
 
-# ------------------------------------------------------------
-# Generate answer
-# ------------------------------------------------------------
+# ============================================================
+# GENERATE ANSWER
+# ============================================================
 
 if st.button(
     "Generate Answer",
@@ -192,11 +183,24 @@ if st.button(
             "Qwen2.5-VL is analyzing the figure..."
         ):
 
-            answer = improved_answer(
-                image,
-                question
-            )
+            try:
 
-        st.subheader("Answer")
+                answer = improved_answer(
+                    image,
+                    question
+                )
+
+                st.subheader("Answer")
+
+                st.write(answer)
+
+            except Exception as e:
+
+                st.error(
+                    "An error occurred while generating the answer."
+                )
+
+                st.exception(e)
+
 
         st.write(answer)
