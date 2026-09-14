@@ -1,8 +1,13 @@
 import streamlit as st
 from PIL import Image
 from huggingface_hub import InferenceClient
-import base64
-import io
+
+
+# ============================================================
+# CONFIGURATION
+# ============================================================
+
+MODEL_NAME = "Qwen/Qwen2.5-VL-3B-Instruct"
 
 
 # ============================================================
@@ -17,18 +22,15 @@ st.set_page_config(
 
 
 # ============================================================
-# CONFIGURATION
-# ============================================================
-
-MODEL_NAME = "Qwen/Qwen2.5-VL-3B-Instruct"
-
-
-# ============================================================
 # HUGGING FACE CLIENT
 # ============================================================
 
 @st.cache_resource
-def get_client():
+def load_client():
+
+    if "HF_TOKEN" not in st.secrets:
+        st.error("HF_TOKEN is missing from Streamlit Secrets.")
+        st.stop()
 
     client = InferenceClient(
         api_key=st.secrets["HF_TOKEN"]
@@ -37,50 +39,24 @@ def get_client():
     return client
 
 
-client = get_client()
+client = load_client()
 
 
 # ============================================================
-# IMAGE TO DATA URL
-# ============================================================
-
-def image_to_data_url(image):
-
-    buffer = io.BytesIO()
-
-    image.save(
-        buffer,
-        format="PNG"
-    )
-
-    image_bytes = buffer.getvalue()
-
-    base64_image = base64.b64encode(
-        image_bytes
-    ).decode("utf-8")
-
-    return f"data:image/png;base64,{base64_image}"
-
-
-# ============================================================
-# QUESTION ANSWERING
+# ANSWER FUNCTION
 # ============================================================
 
 def improved_answer(image, question):
 
     image = image.convert("RGB")
 
-    image_url = image_to_data_url(image)
-
     messages = [
         {
             "role": "user",
             "content": [
                 {
-                    "type": "image_url",
-                    "image_url": {
-                        "url": image_url
-                    }
+                    "type": "image",
+                    "image": image
                 },
                 {
                     "type": "text",
@@ -90,15 +66,13 @@ def improved_answer(image, question):
         }
     ]
 
-    response = client.chat.completions.create(
+    response = client.chat_completion(
         model=MODEL_NAME,
         messages=messages,
         max_tokens=512
     )
 
-    answer = response.choices[0].message.content
-
-    return answer.strip()
+    return response.choices[0].message.content.strip()
 
 
 # ============================================================
@@ -113,16 +87,12 @@ st.write(
 
 
 # ============================================================
-# IMAGE UPLOAD
+# UPLOAD IMAGE
 # ============================================================
 
 uploaded_file = st.file_uploader(
     "Upload Figure",
-    type=[
-        "png",
-        "jpg",
-        "jpeg"
-    ]
+    type=["png", "jpg", "jpeg"]
 )
 
 
@@ -201,6 +171,3 @@ if st.button(
                 )
 
                 st.exception(e)
-
-
-        st.write(answer)
