@@ -33,7 +33,7 @@ def get_client():
     token = st.secrets["HF_TOKEN"]
 
     client = InferenceClient(
-        provider="auto",
+        provider="featherless-ai",
         api_key=token
     )
 
@@ -79,14 +79,14 @@ def improved_answer(image, question):
             "role": "user",
             "content": [
                 {
+                    "type": "text",
+                    "text": question
+                },
+                {
                     "type": "image_url",
                     "image_url": {
                         "url": image_url
                     }
-                },
-                {
-                    "type": "text",
-                    "text": question
                 }
             ]
         }
@@ -99,10 +99,7 @@ def improved_answer(image, question):
         temperature=0.2
     )
 
-    answer = response.choices[0].message.content
-
-    return answer.strip()
-
+    return response.choices[0].message.content.strip()
 
 # ============================================================
 # USER INTERFACE
