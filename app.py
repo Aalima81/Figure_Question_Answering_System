@@ -6,6 +6,23 @@ from io import BytesIO
 
 
 # ============================================================
+# CONFIGURATION
+# ============================================================
+
+MODEL_NAME = "Qwen/Qwen2.5-VL-3B-Instruct"
+
+
+# ============================================================
+# HUGGING FACE CLIENT
+# ============================================================
+
+client = InferenceClient(
+    api_key=st.secrets["HF_TOKEN"],
+    provider="auto"
+)
+
+
+# ============================================================
 # PAGE CONFIGURATION
 # ============================================================
 
@@ -17,94 +34,55 @@ st.set_page_config(
 
 
 # ============================================================
-# HUGGING FACE CONFIGURATION
-# ============================================================
-
-MODEL_NAME = "Qwen/Qwen2.5-VL-3B-Instruct"
-
-
-# ============================================================
-# GET HUGGING FACE CLIENT
-# ============================================================
-
-@st.cache_resource
-def get_client():
-
-    token = st.secrets["HF_TOKEN"]
-
-    client = InferenceClient(
-        provider="featherless-ai",
-        api_key=token
-    )
-
-    return client
-
-
-# ============================================================
-# IMAGE TO BASE64
-# ============================================================
-
-def image_to_data_url(image):
-
-    buffer = BytesIO()
-
-    image.save(
-        buffer,
-        format="PNG"
-    )
-
-    image_bytes = buffer.getvalue()
-
-    base64_image = base64.b64encode(
-        image_bytes
-    ).decode("utf-8")
-
-    return f"data:image/png;base64,{base64_image}"
-
-
-# ============================================================
 # ANSWER FUNCTION
 # ============================================================
 
 def improved_answer(image, question):
 
-    import base64
-    from io import BytesIO
-
-    # Convert PIL image to base64
+    # Convert image to JPEG
     buffer = BytesIO()
-    image.convert("RGB").save(buffer, format="JPEG")
+
+    image.convert("RGB").save(
+        buffer,
+        format="JPEG"
+    )
+
+    # Convert image to Base64
     image_base64 = base64.b64encode(
         buffer.getvalue()
     ).decode("utf-8")
 
-    # Strong instruction to force visual grounding
+    # Prompt
     prompt = f"""
 You are a visual question-answering system.
 
-Answer the user's question ONLY from the uploaded figure.
+Look carefully at the uploaded figure and answer the
+question ONLY using information visible in the figure.
 
-Carefully inspect:
+Pay attention to:
 - labels
 - arrows
 - boxes
 - modules
-- connections
+- diagrams
 - symbols
-- text inside the figure
-- the overall flow
+- text
+- relationships
+- data flow
 
-Do NOT assume information that is not visible in the figure.
-Do NOT give a generic cybersecurity explanation.
-If the requested information is not visible, say:
-"The figure does not provide enough information to answer this."
+Do not give a generic explanation from your own knowledge.
 
-User question:
+Do not assume that the figure contains information
+that is not actually visible.
+
+Question:
 {question}
 
-Give a clear and concise answer based specifically on the figure.
+Give a clear, accurate and concise answer based specifically
+on the uploaded figure.
 """
 
+    # Hugging Face multimodal request
     response = client.chat_completion(
         model=MODEL_NAME,
         messages=[
@@ -118,7 +96,10 @@ Give a clear and concise answer based specifically on the figure.
                     {
                         "type": "image_url",
                         "image_url": {
-                            "url": f"data:image/jpeg;base64,{image_base64}"
+                            "url": (
+                                "data:image/jpeg;base64,"
+                                + image_base64
+                            )
                         }
                     }
                 ]
@@ -129,6 +110,8 @@ Give a clear and concise answer based specifically on the figure.
     )
 
     return response.choices[0].message.content
+
+
 # ============================================================
 # USER INTERFACE
 # ============================================================
@@ -141,7 +124,7 @@ st.write(
 
 
 # ============================================================
-# UPLOAD IMAGE
+# IMAGE UPLOAD
 # ============================================================
 
 uploaded_file = st.file_uploader(
