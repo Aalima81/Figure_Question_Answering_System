@@ -1,0 +1,6 @@
+streamlit==1.63.0
+torch
+transformers
+Pillow
+accelerate
+qwen-vl-utils
