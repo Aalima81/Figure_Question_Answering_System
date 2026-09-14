@@ -18,7 +18,7 @@ MODEL_NAME = "Qwen/Qwen2.5-VL-3B-Instruct"
 
 client = InferenceClient(
     api_key=st.secrets["HF_TOKEN"],
-    provider="auto"
+    provider="featherless-ai"
 )
 
 
